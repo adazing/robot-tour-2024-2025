@@ -2,9 +2,17 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 #include <utility/imumaths.h>
+#include "Optical_Flow_Sensor.h"
+
+//optical flow sensor for drift
+Optical_Flow_Sensor flow(53, PAA5100);
+int16_t totalX = 0, totalY = 0;
+float error_drift = 0.0;
+float kp_drift = 0;
+
 
 // CHANGE HERE
-const char* paths[] = {"START", "LEFT", "LEFT", "LEFT", "LEFT", "LEFT"};
+const char* paths[] = {"START", "FORWARD", "STOP"};
 int index = 0;
 float target_time = 30.0;
 
@@ -13,6 +21,7 @@ float time_per_step = 0.0;
 float start_time = 0.0;
 float goal_time = 0.0;
 float kp_time = .01;
+// float kp_time = 0;
 float left_over_time = 0.0;
 float error_time = 0.0;
 
@@ -21,12 +30,12 @@ float kp = 10.0;
 float ki = 0.7;
 float kd = 2.0;
 float total = 0.0;
+volatile float error = 0.0;
+volatile float prev_error = 0.0;
 
 // state machine
 bool started_new_action = true;
 int length = 48;
-volatile float error = 0.0;
-volatile float prev_error = 0.0;
 volatile unsigned long prev_time = 0;
 
 // Optical Encoder Pins
@@ -52,7 +61,7 @@ int pwmBackLeft = 100;
 int pwmFrontRight = 100;
 int pwmFrontLeft = 100;
 
-int baseSpeed = 150;
+int baseSpeed = 165;
 
 int backRightMillis = 0;
 int backLeftMillis = 0;
@@ -201,6 +210,11 @@ void setup() {
     while (1);
   }
 
+  if (!flow.begin()) {
+    Serial.println("Initialization of the flow sensor failed");
+    while(1) { }
+  }
+
   // calculate time per step
   float num_steps = 0.0;
   for (int x = 0; x<sizeof(paths)/sizeof(paths[0]); x++){
@@ -229,6 +243,8 @@ void resetCounters() {
   frontLeftEncoderCount = 0;
   frontRightEncoderCount = 0;
   backRightEncoderCount = 0;
+  totalY = 0;
+  totalX = 0;
 }
 
 
@@ -265,113 +281,6 @@ int medianTick(int backLeftEncoderCount, int frontLeftEncoderCount, int frontRig
 }
 
 
-void loop() {  // turn = 19 cm
-  
-  if (paths[index] == "FORWARD"){
-    if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
-      started_new_action = false;
-      resetCounters();
-      length = 68;
-    }else{
-      if (medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
-        started_new_action = true;
-        stopMotors();
-        index++;
-      }else{
-        moveForward();
-      }
-    }
-  } else if (paths[index] == "BACKWARD"){
-    if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
-      started_new_action = false;
-      resetCounters();
-      length = 68;
-    }else{
-      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
-        started_new_action = true;
-        stopMotors();
-        index++;
-      }else{
-        moveBackward();
-      }
-    }
-  } else if (paths[index] == "START"){
-    if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000/2 + left_over_time;
-      started_new_action = false;
-      resetCounters();
-      length = 34;
-    }else{
-      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
-        started_new_action = true;
-        stopMotors();
-        index++;
-      }else{
-        moveForward();
-      }
-    }
-  } else if (paths[index] == "RIGHT"){
-    if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
-      started_new_action = false;
-      resetCounters();
-      length = 73;
-    }else{
-      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
-        started_new_action = true;
-        stopMotors();
-        index++;
-      }else{
-        strafeRight();
-      }
-    }
-  } else if (paths[index] == "LEFT"){
-    if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
-      started_new_action = false;
-      resetCounters();
-      length = 73;
-    }else{
-      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
-        started_new_action = true;
-        stopMotors();
-        index++;
-      }else{
-        strafeLeft();
-      }
-    }
-  } else {
-    stopMotors();
-    while (true) {
-      delay(100);
-    }
-  }
-
-  sensors_event_t event;
-  bno.getEvent(&event);
-
-  float angle = event.orientation.x;
-  error = calculateError(angle);
-  adjustMotors();
-  error_time = (millis() - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
-  Serial.print(" ");
-  Serial.print(error_time);
-  Serial.print(" ");
-}
-
-
 void adjustMotors() {
   unsigned long curr_time = millis();
   float dt = curr_time - prev_time;
@@ -382,12 +291,21 @@ void adjustMotors() {
   total = max(-100, min(100, total));
   float correction =  kp * error + kd * derivative + ki * total;
   float time_correction = max(0, 1+kp_time * error_time/1000);
+  // float drift_correction = kp_drift * error_drift;
+
+  // float drift_correction = 0.0;
   baseSpeed = baseSpeed*time_correction;
-  Serial.print("time correction ");
-  Serial.print(time_correction);
-  Serial.print(" correction ");
-  Serial.println(correction);
+  // Serial.print("drift correction ");
+  // Serial.print(drift_correction);
+  Serial.print(" total x ");
+  Serial.print(totalX);
+  Serial.print(" total y ");
+  Serial.println(totalY);
   if (paths[index] == "FORWARD" || paths[index] == "START"){
+    // pwmFrontLeft = baseSpeed;
+    // pwmFrontRight = baseSpeed;
+    // pwmBackLeft = baseSpeed;
+    // pwmBackRight = baseSpeed;
     pwmFrontLeft = min(max(baseSpeed - correction, 75), 255);
     pwmFrontRight = min(max(baseSpeed + correction, 75), 255);
     pwmBackLeft = min(max(baseSpeed - correction, 75), 255);
@@ -400,7 +318,7 @@ void adjustMotors() {
   } else if (paths[index]=="LEFT"){
     pwmFrontLeft = -min(max(baseSpeed + correction, 75), 255);
     pwmFrontRight = min(max(baseSpeed + correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed - correction, 75), 255);
+    pwmBackLeft = min(max(baseSpeed - correction , 75), 255);
     pwmBackRight = -min(max(baseSpeed - correction, 75), 255);
   } else {
     pwmFrontLeft = min(max(baseSpeed - correction, 75), 255);
@@ -490,11 +408,138 @@ void strafeRight() {
 
 // Function to stop all motors
 void stopMotors() {
+  // turn motors off
+  digitalWrite(stbyBackMotors, LOW);
+  digitalWrite(stbyFrontMotors, LOW);
   // Set all motors to low
   analogWrite(pwmBackRightMotor, 0);
   analogWrite(pwmBackLeftMotor, 0);
   analogWrite(pwmFrontRightMotor, 0);
   analogWrite(pwmFrontLeftMotor, 0);
+}
+
+
+
+void loop() {  // turn = 19 cm
+  int16_t deltaX, deltaY;
+  flow.readMotionCount(&deltaX, &deltaY);
+  totalX += deltaX;
+  totalY += deltaY;
+  if (paths[index] == "FORWARD"){
+    if (started_new_action){
+      left_over_time += goal_time - millis();
+      start_time = millis();
+      goal_time = start_time + time_per_step*1000 + left_over_time;
+      started_new_action = false;
+      resetCounters();
+      length = 68;
+    }else{
+      if (medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
+        started_new_action = true;
+        stopMotors();
+        index++;
+      }else{
+        moveForward();
+      }
+    }
+  } else if (paths[index] == "BACKWARD"){
+    if (started_new_action){
+      left_over_time += goal_time - millis();
+      start_time = millis();
+      goal_time = start_time + time_per_step*1000 + left_over_time;
+      started_new_action = false;
+      resetCounters();
+      length = 68;
+    }else{
+      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
+        started_new_action = true;
+        stopMotors();
+        index++;
+      }else{
+        moveBackward();
+      }
+    }
+  } else if (paths[index] == "START"){
+    if (started_new_action){
+      left_over_time += goal_time - millis();
+      start_time = millis();
+      goal_time = start_time + time_per_step*1000/2 + left_over_time;
+      started_new_action = false;
+      resetCounters();
+      length = 34;
+    }else{
+      Serial.print(" ticks ");
+      Serial.print(medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount));
+      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
+        started_new_action = true;
+        Serial.print(" finished ");
+        stopMotors();
+        index++;
+      }else{
+        moveForward();
+      }
+    }
+  } else if (paths[index] == "RIGHT"){
+    if (started_new_action){
+      left_over_time += goal_time - millis();
+      start_time = millis();
+      goal_time = start_time + time_per_step*1000 + left_over_time;
+      started_new_action = false;
+      resetCounters();
+      length = 73;
+    }else{
+      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
+        started_new_action = true;
+        stopMotors();
+        index++;
+      }else{
+        strafeRight();
+      }
+    }
+  } else if (paths[index] == "LEFT"){
+    if (started_new_action){
+      left_over_time += goal_time - millis();
+      start_time = millis();
+      goal_time = start_time + time_per_step*1000 + left_over_time;
+      started_new_action = false;
+      resetCounters();
+      length = 73;
+    }else{
+      if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
+        started_new_action = true;
+        stopMotors();
+        index++;
+      }else{
+        strafeLeft();
+      }
+    }
+  } else {
+    stopMotors();
+    while (true) {
+      delay(100);
+    }
+  }
+
+  sensors_event_t event;
+  bno.getEvent(&event);
+
+  float angle = event.orientation.x;
+  // float angle = 0;
+  error = calculateError(angle);
+  adjustMotors();
+  error_time = (millis() - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
+
+  if (paths[index] == "FORWARD" || paths[index] == "BACKWARD" || paths[index] == "START"){
+    error_drift = totalY;
+  } else {
+    error_drift = totalX;
+  }
+
+  Serial.print(" ");
+  Serial.print(error_time);
+  Serial.print(" ");
+  Serial.print(paths[index]);
+  Serial.print(" ");
 }
 
 
