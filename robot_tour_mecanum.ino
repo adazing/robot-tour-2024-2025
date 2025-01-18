@@ -8,11 +8,14 @@
 Optical_Flow_Sensor flow(53, PAA5100);
 int16_t totalX = 0, totalY = 0;
 float error_drift = 0.0;
-float kp_drift = 0;
+float kp_drift = 0.5;
+float ki_drift = 0.001;
+float kd_drift = 0.1;
+float total_drift = 0.0;
+float prev_error_drift = 0.0;
 
-
-// CHANGE HERE
-const char* paths[] = {"START", "FORWARD", "STOP"};
+// CHANGE HERE"
+const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
 float target_time = 30.0;
 
@@ -26,9 +29,9 @@ float left_over_time = 0.0;
 float error_time = 0.0;
 
 // angle
-float kp = 10.0;
-float ki = 0.7;
-float kd = 2.0;
+float kp = 4.0;
+float ki = 0.1;
+float kd = 1.0;
 float total = 0.0;
 volatile float error = 0.0;
 volatile float prev_error = 0.0;
@@ -245,6 +248,7 @@ void resetCounters() {
   backRightEncoderCount = 0;
   totalY = 0;
   totalX = 0;
+  total_drift = 0;
 }
 
 
@@ -287,16 +291,20 @@ void adjustMotors() {
   prev_time = curr_time;
   float derivative = (error-prev_error) / dt;
   prev_error = error;
+  float derivative_drift = (error_drift - prev_error_drift)/dt;
+  prev_error_drift = error_drift;
   total += error*dt;
+  total_drift += error_drift*dt;
   total = max(-100, min(100, total));
+  total_drift = max(-100, min(100, total));
   float correction =  kp * error + kd * derivative + ki * total;
   float time_correction = max(0, 1+kp_time * error_time/1000);
-  // float drift_correction = kp_drift * error_drift;
+  float drift_correction = kp_drift * error_drift + kd_drift * derivative_drift + ki * total_drift;
 
   // float drift_correction = 0.0;
   baseSpeed = baseSpeed*time_correction;
-  // Serial.print("drift correction ");
-  // Serial.print(drift_correction);
+  Serial.print("drift correction ");
+  Serial.print(drift_correction);
   Serial.print(" total x ");
   Serial.print(totalX);
   Serial.print(" total y ");
@@ -306,25 +314,25 @@ void adjustMotors() {
     // pwmFrontRight = baseSpeed;
     // pwmBackLeft = baseSpeed;
     // pwmBackRight = baseSpeed;
-    pwmFrontLeft = min(max(baseSpeed - correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed + correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed - correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed + correction, 75), 255);
+    pwmFrontLeft = min(max(baseSpeed - correction + drift_correction, 75), 255);
+    pwmFrontRight = min(max(baseSpeed + correction - drift_correction, 75), 255);
+    pwmBackLeft = min(max(baseSpeed - correction - drift_correction, 75), 255);
+    pwmBackRight = min(max(baseSpeed + correction + drift_correction, 75), 255);
   } else if (paths[index]=="BACKWARD"){
-    pwmFrontLeft = min(max(baseSpeed + correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed - correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed + correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed - correction, 75), 255);
+    pwmFrontLeft = min(max(baseSpeed + correction + drift_correction, 75), 255);
+    pwmFrontRight = min(max(baseSpeed - correction - drift_correction, 75), 255);
+    pwmBackLeft = min(max(baseSpeed + correction - drift_correction, 75), 255);
+    pwmBackRight = min(max(baseSpeed - correction + drift_correction, 75), 255);
   } else if (paths[index]=="LEFT"){
-    pwmFrontLeft = -min(max(baseSpeed + correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed + correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed - correction , 75), 255);
-    pwmBackRight = -min(max(baseSpeed - correction, 75), 255);
+    pwmFrontLeft = -min(max(baseSpeed + correction - drift_correction, 75), 255);
+    pwmFrontRight = min(max(baseSpeed + correction + drift_correction, 75), 255);
+    pwmBackLeft = min(max(baseSpeed - correction - drift_correction, 75), 255);
+    pwmBackRight = -min(max(baseSpeed - correction + drift_correction, 75), 255);
   } else {
-    pwmFrontLeft = min(max(baseSpeed - correction, 75), 255);
-    pwmFrontRight = -min(max(baseSpeed - correction, 75), 255);
-    pwmBackLeft = -min(max(baseSpeed + correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed + correction, 75), 255);
+    pwmFrontLeft = min(max(baseSpeed - correction + drift_correction, 75), 255);
+    pwmFrontRight = -min(max(baseSpeed - correction - drift_correction, 75), 255);
+    pwmBackLeft = -min(max(baseSpeed + correction + drift_correction, 75), 255);
+    pwmBackRight = min(max(baseSpeed + correction - drift_correction, 75), 255);
   }
 }
 
@@ -425,6 +433,10 @@ void loop() {  // turn = 19 cm
   flow.readMotionCount(&deltaX, &deltaY);
   totalX += deltaX;
   totalY += deltaY;
+  // Serial.print(" total x ");
+  // Serial.print(totalX);
+  // Serial.print(" total y ");
+  // Serial.println(totalY);
   if (paths[index] == "FORWARD"){
     if (started_new_action){
       left_over_time += goal_time - millis();
