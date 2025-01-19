@@ -8,9 +8,9 @@
 Optical_Flow_Sensor flow(53, PAA5100);
 int16_t totalX = 0, totalY = 0;
 float error_drift = 0.0;
-float kp_drift = 0.5;
-float ki_drift = 0.001;
-float kd_drift = 0.1;
+float kp_drift = 0.2;
+float ki_drift = 0.2;
+float kd_drift = 0.0;
 float total_drift = 0.0;
 float prev_error_drift = 0.0;
 
@@ -29,11 +29,12 @@ float left_over_time = 0.0;
 float error_time = 0.0;
 
 // angle
-float kp = 4.0;
-float ki = 0.1;
-float kd = 1.0;
+float kp = 15.0;
+float ki = 0.0;
+float kd = 0.0;
 float total = 0.0;
 float angle = 0.0; // actual angle value
+float prev_angle = 0.0;
 float error = 0.0; // derivation from 360
 float prev_error = 0.0;
 
@@ -289,20 +290,46 @@ int medianTick(int backLeftEncoderCount, int frontLeftEncoderCount, int frontRig
 void adjustMotors() {
   // calculate change in time
   unsigned long curr_time = millis();
-  float dt = curr_time - prev_time;
+  // float dt = curr_time - prev_time;
+  float dt = 10;
   prev_time = curr_time;
+
+  // read angle
+  sensors_event_t event;
+  bno.getEvent(&event);
+  angle = event.orientation.x;
+  error = calculateError(angle);
+  float theta = 90-(angle+prev_angle)/2;
+  prev_angle = angle;
+  // angle = 90 - angle;
+  Serial.print(" angle ");
+  Serial.print(theta);
 
   // calculate angle derivative
   float derivative = (error-prev_error) / dt;
   prev_error = error;
 
+
   // read optical flow sensor
   int16_t deltaX, deltaY;
+  // float deltaX, deltaY;
   flow.readMotionCount(&deltaX, &deltaY);
-
+  float adj_deltaX = (float) deltaX / (float) dt;
+  float adj_deltaY = (float) deltaY / (float) dt;
+  float pythag = sqrt((float) pow(adj_deltaX, 2) + (float) pow(adj_deltaY, 2));
   //calculate totalX and totalY
-  totalX += deltaX*sin()*;
-  totalY += deltaY;
+  totalX += adj_deltaX*pythag*cos(theta*0.0174533);
+  totalY += adj_deltaY*pythag*sin(theta*0.0174533);
+  // totalX += deltaX;
+  // totalY += deltaY;
+  Serial.print(" totalY ");
+  Serial.print(adj_deltaX*pythag*cos(theta*0.0174533));
+
+  //calculate drift error
+  error_drift = totalX;
+  if (paths[index] == "FORWARD" || paths[index] == "BACKWARD" || paths[index] == "START"){
+    error_drift = totalY;
+  }
 
 
   float derivative_drift = (error_drift - prev_error_drift)/dt;
@@ -545,11 +572,6 @@ void loop() {  // turn = 19 cm
     }
   }
 
-  sensors_event_t event;
-  bno.getEvent(&event);
-
-  angle = event.orientation.x;
-  error = calculateError(angle);
   adjustMotors();
   error_time = (millis() - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
 
@@ -565,6 +587,5 @@ void loop() {  // turn = 19 cm
   Serial.print(paths[index]);
   Serial.print(" ");
 }
-
 
 
