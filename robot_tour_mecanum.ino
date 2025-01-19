@@ -33,8 +33,9 @@ float kp = 4.0;
 float ki = 0.1;
 float kd = 1.0;
 float total = 0.0;
-volatile float error = 0.0;
-volatile float prev_error = 0.0;
+float angle = 0.0; // actual angle value
+float error = 0.0; // derivation from 360
+float prev_error = 0.0;
 
 // state machine
 bool started_new_action = true;
@@ -246,8 +247,8 @@ void resetCounters() {
   frontLeftEncoderCount = 0;
   frontRightEncoderCount = 0;
   backRightEncoderCount = 0;
-  totalY = 0;
-  totalX = 0;
+  // totalY = 0;
+  // totalX = 0;
   total_drift = 0;
 }
 
@@ -286,14 +287,29 @@ int medianTick(int backLeftEncoderCount, int frontLeftEncoderCount, int frontRig
 
 
 void adjustMotors() {
+  // calculate change in time
   unsigned long curr_time = millis();
   float dt = curr_time - prev_time;
   prev_time = curr_time;
+
+  // calculate angle derivative
   float derivative = (error-prev_error) / dt;
   prev_error = error;
+
+  // read optical flow sensor
+  int16_t deltaX, deltaY;
+  flow.readMotionCount(&deltaX, &deltaY);
+
+  //calculate totalX and totalY
+  totalX += deltaX*sin()*;
+  totalY += deltaY;
+
+
   float derivative_drift = (error_drift - prev_error_drift)/dt;
   prev_error_drift = error_drift;
   total += error*dt;
+
+
   total_drift += error_drift*dt;
   total = max(-100, min(100, total));
   total_drift = max(-100, min(100, total));
@@ -429,10 +445,7 @@ void stopMotors() {
 
 
 void loop() {  // turn = 19 cm
-  int16_t deltaX, deltaY;
-  flow.readMotionCount(&deltaX, &deltaY);
-  totalX += deltaX;
-  totalY += deltaY;
+
   // Serial.print(" total x ");
   // Serial.print(totalX);
   // Serial.print(" total y ");
@@ -535,17 +548,16 @@ void loop() {  // turn = 19 cm
   sensors_event_t event;
   bno.getEvent(&event);
 
-  float angle = event.orientation.x;
-  // float angle = 0;
+  angle = event.orientation.x;
   error = calculateError(angle);
   adjustMotors();
   error_time = (millis() - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
 
-  if (paths[index] == "FORWARD" || paths[index] == "BACKWARD" || paths[index] == "START"){
-    error_drift = totalY;
-  } else {
-    error_drift = totalX;
-  }
+  // if (paths[index] == "FORWARD" || paths[index] == "BACKWARD" || paths[index] == "START"){
+  //   error_drift = totalY;
+  // } else {
+  //   error_drift = totalX;
+  // }
 
   Serial.print(" ");
   Serial.print(error_time);
