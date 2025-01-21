@@ -6,18 +6,21 @@
 
 //optical flow sensor for drift
 Optical_Flow_Sensor flow(53, PAA5100);
-int16_t totalX = 0, totalY = 0;
+int32_t totalX = 0, totalY = 0;
 float error_drift = 0.0;
 float kp_drift = 0.2;
-float ki_drift = 0.2;
+float ki_drift = 0.5;
 float kd_drift = 0.0;
 float total_drift = 0.0;
 float prev_error_drift = 0.0;
+float r = 0.0;
 
-// CHANGE HERE"
+// CHANGE HERE
 const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
-float target_time = 30.0;
+float target_time = 15.0;
+bool using_drift_PID = false;
+bool using_angle_PID = true;
 
 //time
 float time_per_step = 0.0;
@@ -29,8 +32,9 @@ float left_over_time = 0.0;
 float error_time = 0.0;
 
 // angle
-float kp = 15.0;
-float ki = 0.0;
+// float kp = 5.0;
+float kp = 2.0;
+float ki = 1.0;
 float kd = 0.0;
 float total = 0.0;
 float angle = 0.0; // actual angle value
@@ -171,6 +175,19 @@ void updateCounters() {
 
 
 void setup() {
+  //set up PID constants
+  if (using_drift_PID == false){
+    kp_drift = 0.0;
+    ki_drift = 0.0;
+    kd_drift = 0.0;
+  }
+
+  if (using_angle_PID == false){
+    kp = 0.0;
+    ki = 0.0;
+    kd = 0.0;
+  }
+
   // Initialize Serial Monitor
   Serial.begin(9600);
 
@@ -254,11 +271,11 @@ void resetCounters() {
 }
 
 
-float calculateError(float angle){
-  if (angle < 180){
-    return angle;
+float calculateError(float m_theta){
+  if (m_theta < 180){
+    return m_theta;
   }else{
-    return angle-360;
+    return m_theta-360;
   }
 }
 
@@ -290,59 +307,60 @@ int medianTick(int backLeftEncoderCount, int frontLeftEncoderCount, int frontRig
 void adjustMotors() {
   // calculate change in time
   unsigned long curr_time = millis();
-  // float dt = curr_time - prev_time;
-  float dt = 10;
+  float dt = curr_time - prev_time;
+  // float dt = 10;
   prev_time = curr_time;
 
   // read angle
   sensors_event_t event;
   bno.getEvent(&event);
-  angle = event.orientation.x;
-  error = calculateError(angle);
-  float theta = 90-(angle+prev_angle)/2;
-  prev_angle = angle;
-  // angle = 90 - angle;
-  Serial.print(" angle ");
-  Serial.print(theta);
+  float m_theta = event.orientation.x;
+  error = calculateError(m_theta);
 
   // calculate angle derivative
-  float derivative = (error-prev_error) / dt;
+  float derivative = (error-prev_error) / (dt/1000);
   prev_error = error;
 
 
   // read optical flow sensor
   int16_t deltaX, deltaY;
   // float deltaX, deltaY;
-  flow.readMotionCount(&deltaX, &deltaY);
-  float adj_deltaX = (float) deltaX / (float) dt;
-  float adj_deltaY = (float) deltaY / (float) dt;
-  float pythag = sqrt((float) pow(adj_deltaX, 2) + (float) pow(adj_deltaY, 2));
+  flow.readMotionCount(&deltaY, &deltaX);
+  deltaY *= -1;
+  deltaX *= -1;
+  float t_theta;
+  if (deltaY==0){
+    t_theta = 0;
+  }else{
+    t_theta = 57.2958*atan2(deltaX, deltaY);
+  }
+  r = sqrt(pow(deltaX,2)+pow(deltaY, 2));
+  angle = t_theta+m_theta;
+  float avg_angle = 57.2958* atan2(sin(0.0174533*angle)+sin(0.0174533*prev_angle), cos(0.0174533*angle)+cos(0.0174533*prev_angle));
+  totalX += r*sin(0.0174533*avg_angle)/(dt/1000);
+  totalY += r*cos(0.0174533*avg_angle)/(dt/1000);
+  prev_angle = angle;
+
   //calculate totalX and totalY
-  totalX += adj_deltaX*pythag*cos(theta*0.0174533);
-  totalY += adj_deltaY*pythag*sin(theta*0.0174533);
-  // totalX += deltaX;
-  // totalY += deltaY;
-  Serial.print(" totalY ");
-  Serial.print(adj_deltaX*pythag*cos(theta*0.0174533));
+  Serial.print(" dt ");
+  Serial.print(dt);
 
   //calculate drift error
-  error_drift = totalX;
+  error_drift = totalY;
   if (paths[index] == "FORWARD" || paths[index] == "BACKWARD" || paths[index] == "START"){
-    error_drift = totalY;
+    error_drift = totalX;
   }
 
-
-  float derivative_drift = (error_drift - prev_error_drift)/dt;
+  float derivative_drift = (error_drift - prev_error_drift)/(dt/1000);
   prev_error_drift = error_drift;
-  total += error*dt;
+  total += error*(dt/1000);
 
-
-  total_drift += error_drift*dt;
+  total_drift += error_drift*(dt/1000);
   total = max(-100, min(100, total));
   total_drift = max(-100, min(100, total));
   float correction =  kp * error + kd * derivative + ki * total;
-  float time_correction = max(0, 1+kp_time * error_time/1000);
-  float drift_correction = kp_drift * error_drift + kd_drift * derivative_drift + ki * total_drift;
+  float time_correction = min(max(0, 1+kp_time * error_time/1000), 1);
+  float drift_correction = kp_drift * error_drift + kd_drift * derivative_drift + ki_drift * total_drift;
 
   // float drift_correction = 0.0;
   baseSpeed = baseSpeed*time_correction;
@@ -353,29 +371,31 @@ void adjustMotors() {
   Serial.print(" total y ");
   Serial.println(totalY);
   if (paths[index] == "FORWARD" || paths[index] == "START"){
-    // pwmFrontLeft = baseSpeed;
-    // pwmFrontRight = baseSpeed;
-    // pwmBackLeft = baseSpeed;
-    // pwmBackRight = baseSpeed;
-    pwmFrontLeft = min(max(baseSpeed - correction + drift_correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed + correction - drift_correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed - correction - drift_correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed + correction + drift_correction, 75), 255);
+
+    pwmFrontLeft = min(max(baseSpeed - drift_correction - correction, 75), 255);
+    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmBackRight = min(max(baseSpeed - drift_correction + correction, 75), 255);
+
   } else if (paths[index]=="BACKWARD"){
-    pwmFrontLeft = min(max(baseSpeed + correction + drift_correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed - correction - drift_correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed + correction - drift_correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed - correction + drift_correction, 75), 255);
+    pwmFrontLeft = -min(max(baseSpeed - drift_correction - correction, 75), 255);
+    pwmFrontRight = -min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmBackLeft = -min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmBackRight = -min(max(baseSpeed - drift_correction + correction, 75), 255);
+
   } else if (paths[index]=="LEFT"){
-    pwmFrontLeft = -min(max(baseSpeed + correction - drift_correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed + correction + drift_correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed - correction - drift_correction, 75), 255);
-    pwmBackRight = -min(max(baseSpeed - correction + drift_correction, 75), 255);
-  } else {
-    pwmFrontLeft = min(max(baseSpeed - correction + drift_correction, 75), 255);
-    pwmFrontRight = -min(max(baseSpeed - correction - drift_correction, 75), 255);
-    pwmBackLeft = -min(max(baseSpeed + correction + drift_correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed + correction - drift_correction, 75), 255);
+
+    pwmFrontLeft = -min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmBackRight = -min(max(baseSpeed + drift_correction - correction, 75), 255);
+
+  } else { // RIGHT
+    pwmFrontLeft = min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmBackRight = min(max(baseSpeed + drift_correction + correction, 75), 255);
+
   }
 }
 
@@ -398,11 +418,8 @@ void moveForward() {
 
   // Set motor direction
   moveWheel(input1BackRight, input2BackRight, pwmBackRightMotor, pwmBackRight);
-
   moveWheel(input1BackLeft, input2BackLeft, pwmBackLeftMotor, pwmBackLeft);
-
   moveWheel(input1FrontRight, input2FrontRight, pwmFrontRightMotor, pwmFrontRight);
-
   moveWheel(input1FrontLeft, input2FrontLeft, pwmFrontLeftMotor, pwmFrontLeft);
 }
 
@@ -412,48 +429,36 @@ void moveBackward() {
   digitalWrite(stbyBackMotors, HIGH);   // Enable back motors
   digitalWrite(stbyFrontMotors, HIGH);  // Enable front motors
 
-  moveWheel(input1BackRight, input2BackRight, pwmBackRightMotor, -pwmBackRight);
-
-  moveWheel(input1BackLeft, input2BackLeft, pwmBackLeftMotor, -pwmBackLeft);
-
-  moveWheel(input1FrontRight, input2FrontRight, pwmFrontRightMotor, -pwmFrontRight);
-
-  moveWheel(input1FrontLeft, input2FrontLeft, pwmFrontLeftMotor, -pwmFrontLeft);
-
+  moveWheel(input1BackRight, input2BackRight, pwmBackRightMotor, pwmBackRight);
+  moveWheel(input1BackLeft, input2BackLeft, pwmBackLeftMotor, pwmBackLeft);
+  moveWheel(input1FrontRight, input2FrontRight, pwmFrontRightMotor, pwmFrontRight);
+  moveWheel(input1FrontLeft, input2FrontLeft, pwmFrontLeftMotor, pwmFrontLeft);
 
 }
 
 
-// Function to turn the robot
+// Function to strafe the robot left
 void strafeLeft() {
   digitalWrite(stbyBackMotors, HIGH);   // Enable back motors
   digitalWrite(stbyFrontMotors, HIGH);  // Enable front motors
 
   moveWheel(input1BackRight, input2BackRight, pwmBackRightMotor, pwmBackRight);
-
   moveWheel(input1BackLeft, input2BackLeft, pwmBackLeftMotor, pwmBackLeft);
-
   moveWheel(input1FrontRight, input2FrontRight, pwmFrontRightMotor, pwmFrontRight);
-
   moveWheel(input1FrontLeft, input2FrontLeft, pwmFrontLeftMotor, pwmFrontLeft);
 
 }
 
 
-// Function to turn the robot
+// Function to strafe the robot right
 void strafeRight() {
   digitalWrite(stbyBackMotors, HIGH);   // Enable back motors
   digitalWrite(stbyFrontMotors, HIGH);  // Enable front motors
 
-
   moveWheel(input1BackRight, input2BackRight, pwmBackRightMotor, pwmBackRight);
-
   moveWheel(input1BackLeft, input2BackLeft, pwmBackLeftMotor, pwmBackLeft);
-
   moveWheel(input1FrontRight, input2FrontRight, pwmFrontRightMotor, pwmFrontRight);
-
   moveWheel(input1FrontLeft, input2FrontLeft, pwmFrontLeftMotor, pwmFrontLeft);
-
 }
 
 
@@ -471,12 +476,7 @@ void stopMotors() {
 
 
 
-void loop() {  // turn = 19 cm
-
-  // Serial.print(" total x ");
-  // Serial.print(totalX);
-  // Serial.print(" total y ");
-  // Serial.println(totalY);
+void loop() {
   if (paths[index] == "FORWARD"){
     if (started_new_action){
       left_over_time += goal_time - millis();
@@ -520,11 +520,11 @@ void loop() {  // turn = 19 cm
       resetCounters();
       length = 34;
     }else{
-      Serial.print(" ticks ");
-      Serial.print(medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount));
+      // Serial.print(" ticks ");
+      // Serial.print(medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount));
       if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
         started_new_action = true;
-        Serial.print(" finished ");
+        // Serial.print(" finished ");
         stopMotors();
         index++;
       }else{
@@ -575,11 +575,6 @@ void loop() {  // turn = 19 cm
   adjustMotors();
   error_time = (millis() - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
 
-  // if (paths[index] == "FORWARD" || paths[index] == "BACKWARD" || paths[index] == "START"){
-  //   error_drift = totalY;
-  // } else {
-  //   error_drift = totalX;
-  // }
 
   Serial.print(" ");
   Serial.print(error_time);
