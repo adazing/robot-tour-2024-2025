@@ -2,24 +2,25 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
 #include <utility/imumaths.h>
-#include "Optical_Flow_Sensor.h"
+// #include "Optical_Flow_Sensor.h"
 
 //optical flow sensor for drift
-Optical_Flow_Sensor flow(53, PAA5100);
+// Optical_Flow_Sensor flow(53, PAA5100);
 int32_t totalX = 0, totalY = 0;
 float error_drift = 0.0;
-float kp_drift = 0.2;
-float ki_drift = 0.5;
+float kp_drift = 0.01;
+// float ki_drift = 0.5;
+float ki_drift = 0.0;
 float kd_drift = 0.0;
 float total_drift = 0.0;
 float prev_error_drift = 0.0;
 float r = 0.0;
 
 // CHANGE HERE
-const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "RIGHT", "BACKWARD", "BACKWARD", "BACKWARD", "RIGHT", "FORWARD", "FORWARD", "FORWARD", "RIGHT", "BACKWARD", "BACKWARD", "BACKWARD", "RIGHT", "FORWARD", "FORWARD", "FORWARD", "STOP"};
-// const char* paths[] = {"START", "LEFT", "LEFT", "LEFT", "STOP"};
+const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "LEFT", "BACKWARD", "BACKWARD", "BACKWARD", "LEFT", "FORWARD", "FORWARD", "FORWARD", "LEFT", "BACKWARD", "BACKWARD", "BACKWARD", "LEFT", "FORWARD", "FORWARD", "FORWARD", "STOP"};
+// const char* paths[] = {"START", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
-float target_time = 15.0;
+float target_time = 75.0;
 bool using_drift_PID = false;
 bool using_angle_PID = true;
 
@@ -34,8 +35,8 @@ float error_time = 0.0;
 
 // angle
 // float kp = 5.0;
-float kp = 5.0;
-float ki = 1.0;
+float kp = 10.0;
+float ki = 10.0;
 float kd = 0.0;
 float total = 0.0;
 float angle = 0.0; // actual angle value
@@ -99,6 +100,9 @@ const int input2FrontLeft = 31;
 uint16_t BNO055_SAMPLERATE_DELAY_MS = 100;
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
+
+int min_speed = 125;
+int max_speed = 255;
 
 
 void printCounters() {
@@ -233,10 +237,10 @@ void setup() {
     while (1);
   }
 
-  if (!flow.begin()) {
-    Serial.println("Initialization of the flow sensor failed");
-    while(1) { }
-  }
+  // if (!flow.begin()) {
+  //   Serial.println("Initialization of the flow sensor failed");
+  //   while(1) { }
+  // }
 
   // calculate time per step
   float num_steps = 0.0;
@@ -266,8 +270,8 @@ void resetCounters() {
   frontLeftEncoderCount = 0;
   frontRightEncoderCount = 0;
   backRightEncoderCount = 0;
-  // totalY = 0;
-  // totalX = 0;
+  totalY = 0;
+  totalX = 0;
   total_drift = 0;
 }
 
@@ -326,9 +330,9 @@ void adjustMotors() {
   // read optical flow sensor
   int16_t deltaX, deltaY;
   // float deltaX, deltaY;
-  flow.readMotionCount(&deltaY, &deltaX);
-  deltaY *= -1;
-  deltaX *= -1;
+  // flow.readMotionCount(&deltaY, &deltaX);
+  deltaY = 0;
+  deltaX = 0;
   float t_theta;
   if (deltaY==0){
     t_theta = 0;
@@ -365,37 +369,37 @@ void adjustMotors() {
 
   // float drift_correction = 0.0;
   baseSpeed = baseSpeed*time_correction;
-  Serial.print("drift correction ");
-  Serial.print(drift_correction);
+  Serial.print(" angle correction ");
+  Serial.print(correction);
   Serial.print(" total x ");
   Serial.print(totalX);
   Serial.print(" total y ");
   Serial.println(totalY);
   if (paths[index] == "FORWARD" || paths[index] == "START"){
 
-    pwmFrontLeft = min(max(baseSpeed - drift_correction - correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed - drift_correction + correction, 75), 255);
+    pwmFrontLeft = min(max(baseSpeed - drift_correction - correction, min_speed), max_speed);
+    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
+    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
+    pwmBackRight = min(max(baseSpeed - drift_correction + correction, min_speed), max_speed);
 
   } else if (paths[index]=="BACKWARD"){
-    pwmFrontLeft = -min(max(baseSpeed - drift_correction + correction, 75), 255);
-    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, 75), 255);
-    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, 75), 255);
-    pwmBackRight = -min(max(baseSpeed - drift_correction - correction, 75), 255);
+    pwmFrontLeft = -min(max(baseSpeed - drift_correction + correction, min_speed), max_speed);
+    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
+    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
+    pwmBackRight = -min(max(baseSpeed - drift_correction - correction, min_speed), max_speed);
 
   } else if (paths[index]=="LEFT"){
 
-    pwmFrontLeft = -min(max(baseSpeed + drift_correction + correction, 75), 255);
-    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, 75), 255);
-    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, 75), 255);
-    pwmBackRight = -min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmFrontLeft = -min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
+    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
+    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
+    pwmBackRight = -min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
 
   } else { // RIGHT
-    pwmFrontLeft = min(max(baseSpeed + drift_correction - correction, 75), 255);
-    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, 75), 255);
-    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, 75), 255);
-    pwmBackRight = min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmFrontLeft = min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
+    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
+    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
+    pwmBackRight = min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
 
   }
 }
@@ -485,7 +489,7 @@ void loop() {
       goal_time = start_time + time_per_step*1000 + left_over_time;
       started_new_action = false;
       resetCounters();
-      length = 68;
+      length = 65;
     }else{
       if (medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
         started_new_action = true;
@@ -502,7 +506,7 @@ void loop() {
       goal_time = start_time + time_per_step*1000 + left_over_time;
       started_new_action = false;
       resetCounters();
-      length = 68;
+      length = 65;
     }else{
       if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
         started_new_action = true;
@@ -519,7 +523,7 @@ void loop() {
       goal_time = start_time + time_per_step*1000/2 + left_over_time;
       started_new_action = false;
       resetCounters();
-      length = 34;
+      length = 32;
     }else{
       // Serial.print(" ticks ");
       // Serial.print(medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount));
@@ -556,7 +560,7 @@ void loop() {
       goal_time = start_time + time_per_step*1000 + left_over_time;
       started_new_action = false;
       resetCounters();
-      length = 73;
+      length = 71;
     }else{
       if (medianTick( backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)>length){
         started_new_action = true;
