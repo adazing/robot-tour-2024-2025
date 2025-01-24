@@ -16,7 +16,8 @@ float prev_error_drift = 0.0;
 float r = 0.0;
 
 // CHANGE HERE
-const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "STOP"};
+const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "RIGHT", "BACKWARD", "BACKWARD", "BACKWARD", "RIGHT", "FORWARD", "FORWARD", "FORWARD", "RIGHT", "BACKWARD", "BACKWARD", "BACKWARD", "RIGHT", "FORWARD", "FORWARD", "FORWARD", "STOP"};
+// const char* paths[] = {"START", "LEFT", "LEFT", "LEFT", "STOP"};
 int index = 0;
 float target_time = 15.0;
 bool using_drift_PID = false;
@@ -33,7 +34,7 @@ float error_time = 0.0;
 
 // angle
 // float kp = 5.0;
-float kp = 2.0;
+float kp = 5.0;
 float ki = 1.0;
 float kd = 0.0;
 float total = 0.0;
@@ -378,10 +379,10 @@ void adjustMotors() {
     pwmBackRight = min(max(baseSpeed - drift_correction + correction, 75), 255);
 
   } else if (paths[index]=="BACKWARD"){
-    pwmFrontLeft = -min(max(baseSpeed - drift_correction - correction, 75), 255);
-    pwmFrontRight = -min(max(baseSpeed + drift_correction + correction, 75), 255);
-    pwmBackLeft = -min(max(baseSpeed + drift_correction - correction, 75), 255);
-    pwmBackRight = -min(max(baseSpeed - drift_correction + correction, 75), 255);
+    pwmFrontLeft = -min(max(baseSpeed - drift_correction + correction, 75), 255);
+    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, 75), 255);
+    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, 75), 255);
+    pwmBackRight = -min(max(baseSpeed - drift_correction - correction, 75), 255);
 
   } else if (paths[index]=="LEFT"){
 
