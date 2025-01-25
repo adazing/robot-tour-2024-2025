@@ -17,7 +17,7 @@ float prev_error_drift = 0.0;
 float r = 0.0;
 
 // CHANGE HERE
-const char* paths[] = {"START", "RIGHT", "RIGHT", "RIGHT", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "STOP"};
+const char* paths[] = {"START", "LEFT", "LEFT", "LEFT", "STOP"};
 // const char* paths[] = {"START", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
 float target_time = 35.0;
@@ -36,9 +36,9 @@ float error_time = 0.0;
 
 // angle
 // float kp = 5.0;
-float kp = 10.0;
-float ki = 10.0;
-float kd = 0.0;
+float kp = 7.0;
+float ki = 8.0;
+float kd = 1.0;
 float total = 0.0;
 float angle = 0.0; // actual angle value
 float prev_angle = 0.0;
