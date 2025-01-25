@@ -17,10 +17,11 @@ float prev_error_drift = 0.0;
 float r = 0.0;
 
 // CHANGE HERE
-const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "LEFT", "BACKWARD", "BACKWARD", "BACKWARD", "LEFT", "FORWARD", "FORWARD", "FORWARD", "LEFT", "BACKWARD", "BACKWARD", "BACKWARD", "LEFT", "FORWARD", "FORWARD", "FORWARD", "STOP"};
+const char* paths[] = {"START", "RIGHT", "RIGHT", "RIGHT", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "FORWARD", "STOP"};
 // const char* paths[] = {"START", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
-float target_time = 75.0;
+float target_time = 35.0;
+bool using_time_PID = false;
 bool using_drift_PID = false;
 bool using_angle_PID = true;
 
@@ -28,7 +29,7 @@ bool using_angle_PID = true;
 float time_per_step = 0.0;
 float start_time = 0.0;
 float goal_time = 0.0;
-float kp_time = .01;
+float kp_time = 100;
 // float kp_time = 0;
 float left_over_time = 0.0;
 float error_time = 0.0;
@@ -181,6 +182,10 @@ void updateCounters() {
 
 void setup() {
   //set up PID constants
+  if (using_time_PID == false) {
+    kp_time = 0.0;
+  }
+
   if (using_drift_PID == false){
     kp_drift = 0.0;
     ki_drift = 0.0;
@@ -305,7 +310,7 @@ int medianTick(int backLeftEncoderCount, int frontLeftEncoderCount, int frontRig
   float median = (counts[1] + counts[2]) / 2.0;
   return median;
 
-  goal_time = millis();
+  // goal_time = millis()/1000;
 }
 
 
@@ -364,42 +369,42 @@ void adjustMotors() {
   total = max(-100, min(100, total));
   total_drift = max(-100, min(100, total));
   float correction =  kp * error + kd * derivative + ki * total;
-  float time_correction = min(max(0, 1+kp_time * error_time/1000), 1);
+  float time_correction = min(max(0.1, 1+kp_time * error_time/1000), 2);
   float drift_correction = kp_drift * error_drift + kd_drift * derivative_drift + ki_drift * total_drift;
 
   // float drift_correction = 0.0;
-  baseSpeed = baseSpeed*time_correction;
-  Serial.print(" angle correction ");
-  Serial.print(correction);
+  // baseSpeed = baseSpeed*time_correction;
+  Serial.print(" time correction ");
+  Serial.print(time_correction);
   Serial.print(" total x ");
   Serial.print(totalX);
   Serial.print(" total y ");
   Serial.println(totalY);
   if (paths[index] == "FORWARD" || paths[index] == "START"){
 
-    pwmFrontLeft = min(max(baseSpeed - drift_correction - correction, min_speed), max_speed);
-    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
-    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
-    pwmBackRight = min(max(baseSpeed - drift_correction + correction, min_speed), max_speed);
+    pwmFrontLeft = min(max(time_correction*(baseSpeed - drift_correction - correction), min_speed), max_speed);
+    pwmFrontRight = min(max(time_correction * (baseSpeed + drift_correction + correction), min_speed), max_speed);
+    pwmBackLeft = min(max(time_correction*(baseSpeed + drift_correction - correction), min_speed), max_speed);
+    pwmBackRight = min(max(time_correction*(baseSpeed - drift_correction + correction), min_speed), max_speed);
 
   } else if (paths[index]=="BACKWARD"){
-    pwmFrontLeft = -min(max(baseSpeed - drift_correction + correction, min_speed), max_speed);
-    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
-    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
-    pwmBackRight = -min(max(baseSpeed - drift_correction - correction, min_speed), max_speed);
+    pwmFrontLeft = -min(max(time_correction*(baseSpeed - drift_correction + correction), min_speed), max_speed);
+    pwmFrontRight = -min(max(time_correction*(baseSpeed + drift_correction - correction), min_speed), max_speed);
+    pwmBackLeft = -min(max(time_correction*(baseSpeed + drift_correction + correction), min_speed), max_speed);
+    pwmBackRight = -min(max(time_correction*(baseSpeed - drift_correction - correction), min_speed), max_speed);
 
   } else if (paths[index]=="LEFT"){
 
-    pwmFrontLeft = -min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
-    pwmFrontRight = min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
-    pwmBackLeft = min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
-    pwmBackRight = -min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
+    pwmFrontLeft = -min(max(time_correction*(baseSpeed + drift_correction + correction), min_speed), max_speed);
+    pwmFrontRight = min(max(time_correction*(baseSpeed + drift_correction + correction), min_speed), max_speed);
+    pwmBackLeft = min(max(time_correction*(baseSpeed + drift_correction - correction), min_speed), max_speed);
+    pwmBackRight = -min(max(time_correction*(baseSpeed + drift_correction - correction), min_speed), max_speed);
 
   } else { // RIGHT
-    pwmFrontLeft = min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
-    pwmFrontRight = -min(max(baseSpeed + drift_correction - correction, min_speed), max_speed);
-    pwmBackLeft = -min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
-    pwmBackRight = min(max(baseSpeed + drift_correction + correction, min_speed), max_speed);
+    pwmFrontLeft = min(max(time_correction*(baseSpeed + drift_correction - correction), min_speed), max_speed);
+    pwmFrontRight = -min(max(time_correction*(baseSpeed + drift_correction - correction), min_speed), max_speed);
+    pwmBackLeft = -min(max(time_correction*(baseSpeed + drift_correction + correction), min_speed), max_speed);
+    pwmBackRight = min(max(time_correction*(baseSpeed + drift_correction + correction), min_speed), max_speed);
 
   }
 }
@@ -482,11 +487,17 @@ void stopMotors() {
 
 
 void loop() {
+  Serial.print(" start time ");
+  Serial.print(start_time);
+  Serial.print(" goal time ");
+  Serial.print(goal_time);
+  Serial.print(" time_per_step ");
+  Serial.print(time_per_step);
   if (paths[index] == "FORWARD"){
     if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
+      left_over_time += goal_time - millis()/1000.0;
+      start_time = millis()/1000.0;
+      goal_time = start_time + time_per_step + left_over_time;
       started_new_action = false;
       resetCounters();
       length = 65;
@@ -501,9 +512,9 @@ void loop() {
     }
   } else if (paths[index] == "BACKWARD"){
     if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
+      left_over_time += goal_time - millis()/1000.0;
+      start_time = millis()/1000.0;
+      goal_time = start_time + time_per_step + left_over_time;
       started_new_action = false;
       resetCounters();
       length = 65;
@@ -518,9 +529,9 @@ void loop() {
     }
   } else if (paths[index] == "START"){
     if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000/2 + left_over_time;
+      left_over_time += goal_time - millis()/1000;
+      start_time = millis()/1000.0;
+      goal_time = start_time + time_per_step/2 + left_over_time;
       started_new_action = false;
       resetCounters();
       length = 32;
@@ -538,9 +549,9 @@ void loop() {
     }
   } else if (paths[index] == "RIGHT"){
     if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
+      left_over_time += goal_time - millis()/1000.0;
+      start_time = millis()/1000.0;
+      goal_time = start_time + time_per_step + left_over_time;
       started_new_action = false;
       resetCounters();
       length = 73;
@@ -555,9 +566,9 @@ void loop() {
     }
   } else if (paths[index] == "LEFT"){
     if (started_new_action){
-      left_over_time += goal_time - millis();
-      start_time = millis();
-      goal_time = start_time + time_per_step*1000 + left_over_time;
+      left_over_time += goal_time - millis()/1000.0;
+      start_time = millis()/1000.0;
+      goal_time = start_time + time_per_step + left_over_time;
       started_new_action = false;
       resetCounters();
       length = 71;
@@ -578,9 +589,16 @@ void loop() {
   }
 
   adjustMotors();
-  error_time = (millis() - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
+  error_time = (millis()/1000.0 - start_time) - (float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time);
 
-
+  Serial.print(" blah ");
+  Serial.print(millis()/1000.0 - start_time);
+  Serial.print(" ");
+  Serial.print(left_over_time);
+  Serial.print(" ");
+  Serial.print(goal_time-start_time);
+  Serial.print(" ");
+  Serial.print((float)medianTick(backLeftEncoderCount, frontLeftEncoderCount, frontRightEncoderCount, backRightEncoderCount)/(float)length * (goal_time-start_time));
   Serial.print(" ");
   Serial.print(error_time);
   Serial.print(" ");
