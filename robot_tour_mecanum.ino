@@ -17,11 +17,11 @@ float prev_error_drift = 0.0;
 float r = 0.0;
 
 // CHANGE HERE
-const char* paths[] = {"START", "LEFT", "LEFT", "LEFT", "STOP"};
+const char* paths[] = {"START", "FORWARD", "FORWARD", "RIGHT", "RIGHT", "LEFT", "LEFT", "BACKWARD", "BACKWARD","STOP"};
 // const char* paths[] = {"START", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
-float target_time = 35.0;
-bool using_time_PID = false;
+float target_time = 10.0;
+bool using_time_PID = true;
 bool using_drift_PID = false;
 bool using_angle_PID = true;
 
@@ -36,9 +36,9 @@ float error_time = 0.0;
 
 // angle
 // float kp = 5.0;
-float kp = 7.0;
-float ki = 8.0;
-float kd = 1.0;
+float kp = 3.0;
+float ki = 0.0;
+float kd = 0.0;
 float total = 0.0;
 float angle = 0.0; // actual angle value
 float prev_angle = 0.0;
@@ -102,7 +102,7 @@ uint16_t BNO055_SAMPLERATE_DELAY_MS = 100;
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 
-int min_speed = 125;
+int min_speed = 100;
 int max_speed = 255;
 
 
@@ -529,7 +529,8 @@ void loop() {
     }
   } else if (paths[index] == "START"){
     if (started_new_action){
-      left_over_time += goal_time - millis()/1000;
+      // left_over_time += goal_time - millis()/1000;
+      // goal_time = millis();
       start_time = millis()/1000.0;
       goal_time = start_time + time_per_step/2 + left_over_time;
       started_new_action = false;
