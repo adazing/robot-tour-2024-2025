@@ -17,7 +17,7 @@ float prev_error_drift = 0.0;
 float r = 0.0;
 
 // CHANGE HERE
-const char* paths[] = {"START", "FORWARD", "FORWARD", "RIGHT", "RIGHT", "LEFT", "LEFT", "BACKWARD", "BACKWARD","STOP"};
+const char* paths[] = {"START", "FORWARD", "FORWARD", "FORWARD", "LEFT", "BACKWARD", "BACKWARD", "BACKWARD", "LEFT", "FORWARD","FORWARD","FORWARD", "LEFT", "BACKWARD", "BACKWARD", "BACKWARD", "LEFT", "FORWARD","FORWARD","FORWARD", "STOP"};
 // const char* paths[] = {"START", "FORWARD", "FORWARD", "STOP"};
 int index = 0;
 float target_time = 10.0;
@@ -36,8 +36,8 @@ float error_time = 0.0;
 
 // angle
 // float kp = 5.0;
-float kp = 3.0;
-float ki = 0.0;
+float kp = 10.0;
+float ki = 10.0;
 float kd = 0.0;
 float total = 0.0;
 float angle = 0.0; // actual angle value
@@ -103,7 +103,7 @@ uint16_t BNO055_SAMPLERATE_DELAY_MS = 100;
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 
 int min_speed = 100;
-int max_speed = 255;
+int max_speed = 170;
 
 
 void printCounters() {
